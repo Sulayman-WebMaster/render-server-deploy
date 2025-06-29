@@ -41,7 +41,6 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
       .filter((row) => row.roll !== undefined && row.roll !== null)
       .map((row) => row.roll.toString());
 
-    // Group into 200 present students
     const groups = [];
     let presentCount = 0;
     let i = 0;
@@ -169,7 +168,7 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
   }
 });
 
-// === Endpoint 2: Subject-wise Roll Column Sheet with Table and Borders ===
+// === Endpoint 2: Subject-wise Roll Table with Borders ===
 app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => {
   try {
     const subjectCode = req.body.subjectCode;
@@ -201,8 +200,7 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
 
         for (let colIndex = 0; colIndex < columns; colIndex++) {
           const rollIndex = colIndex * maxRows + rowIndex;
-          const rollValue =
-            rollIndex < pageRolls.length ? pageRolls[rollIndex] : "";
+          const rollValue = rollIndex < pageRolls.length ? pageRolls[rollIndex] : "";
 
           cells.push(
             new TableCell({
@@ -220,12 +218,11 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: rollValue,
+                      text: rollValue || "",
                       font: "Times New Roman",
                       size: 24,
                     }),
                   ],
-                  spacing: { before: 100, after: 100 },
                 }),
               ],
             })
@@ -235,48 +232,31 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
         rows.push(new TableRow({ children: cells }));
       }
 
-      // Create total row as a new table
-      const totalTable = new Table({
-        rows: [
-          new TableRow({
+      const totalRow = new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: columns,
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+              bottom: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+              left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+              right: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+            },
             children: [
-              new TableCell({
-                columnSpan: columns,
-                borders: {
-                  top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-                  bottom: {
-                    style: BorderStyle.SINGLE,
-                    size: 2,
-                    color: "000000",
-                  },
-                  left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-                  right: {
-                    style: BorderStyle.SINGLE,
-                    size: 2,
-                    color: "000000",
-                  },
-                },
+              new Paragraph({
+                alignment: "center",
                 children: [
-                  new Paragraph({
-                    alignment: "center",
-                    children: [
-                      new TextRun({
-                        text: `Total Rolls: ${pageRolls.length}`,
-                        bold: true,
-                        font: "Times New Roman",
-                        size: 28,
-                      }),
-                    ],
+                  new TextRun({
+                    text: `Total Rolls: ${pageRolls.length}`,
+                    bold: true,
+                    font: "Times New Roman",
+                    size: 28,
                   }),
                 ],
               }),
             ],
           }),
         ],
-        width: {
-          size: 100,
-          type: WidthType.PERCENTAGE,
-        },
       });
 
       return {
@@ -299,7 +279,7 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
               type: WidthType.PERCENTAGE,
             },
           }),
-          totalTable,
+          totalRow,
           ...(pageIndex !== pages.length - 1
             ? [new Paragraph({ children: [new PageBreak()] })]
             : []),
