@@ -168,7 +168,7 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
   }
 });
 
-// === Endpoint 2: Subject-wise Roll Table with Borders ===
+// === Endpoint 2: Subject-wise Roll Table (One Table, One Total) ===
 app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => {
   try {
     const subjectCode = req.body.subjectCode;
@@ -184,110 +184,107 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
       .filter(Boolean);
 
     const columns = 6;
-    const maxRows = 48;
-    const rollsPerPage = columns * maxRows;
+    const rows = [];
+    const totalRows = Math.ceil(rolls.length / columns);
 
-    const pages = [];
-    for (let i = 0; i < rolls.length; i += rollsPerPage) {
-      pages.push(rolls.slice(i, i + rollsPerPage));
-    }
+    for (let rowIndex = 0; rowIndex < totalRows; rowIndex++) {
+      const cells = [];
 
-    const sections = pages.map((pageRolls, pageIndex) => {
-      const rows = [];
+      for (let colIndex = 0; colIndex < columns; colIndex++) {
+        const index = colIndex * totalRows + rowIndex;
+        const roll = index < rolls.length ? rolls[index] : "";
 
-      for (let rowIndex = 0; rowIndex < maxRows; rowIndex++) {
-        const cells = [];
-
-        for (let colIndex = 0; colIndex < columns; colIndex++) {
-          const rollIndex = colIndex * maxRows + rowIndex;
-          const rollValue = rollIndex < pageRolls.length ? pageRolls[rollIndex] : "";
-
-          cells.push(
-            new TableCell({
-              width: {
-                size: 100 / columns,
-                type: WidthType.PERCENTAGE,
-              },
-              borders: {
-                top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-                bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-                left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-                right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-              },
-              children: [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: rollValue || "",
-                      font: "Times New Roman",
-                      size: 24,
-                    }),
-                  ],
-                }),
-              ],
-            })
-          );
-        }
-
-        rows.push(new TableRow({ children: cells }));
-      }
-
-      const totalRow = new TableRow({
-        children: [
+        cells.push(
           new TableCell({
-            columnSpan: columns,
+            width: {
+              size: 100 / columns,
+              type: WidthType.PERCENTAGE,
+            },
             borders: {
-              top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-              bottom: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-              left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-              right: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+              top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
             },
             children: [
               new Paragraph({
-                alignment: "center",
                 children: [
                   new TextRun({
-                    text: `Total Rolls: ${pageRolls.length}`,
-                    bold: true,
+                    text: roll,
                     font: "Times New Roman",
-                    size: 28,
+                    size: 24,
                   }),
                 ],
+                spacing: { before: 100, after: 100 },
               }),
             ],
-          }),
-        ],
-      });
+          })
+        );
+      }
 
-      return {
-        children: [
-          new Paragraph({
-            spacing: { after: 400 },
-            children: [
-              new TextRun({
-                text: `Rolls for Subject: ${subjectCode}`,
-                bold: true,
-                font: "Times New Roman",
-                size: 30,
-              }),
-            ],
-          }),
-          new Table({
-            rows,
-            width: {
-              size: 100,
-              type: WidthType.PERCENTAGE,
-            },
-          }),
-          totalRow,
-          ...(pageIndex !== pages.length - 1
-            ? [new Paragraph({ children: [new PageBreak()] })]
-            : []),
-        ],
-      };
+      rows.push(new TableRow({ children: cells }));
+    }
+
+    // Final total row with 6 separate cells
+    const totalCells = [];
+    for (let i = 0; i < columns; i++) {
+      totalCells.push(
+        new TableCell({
+          borders: {
+            top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+            bottom: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+            left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+            right: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+          },
+          children: [
+            new Paragraph({
+              alignment: i === 0 ? "center" : undefined,
+              children:
+                i === 0
+                  ? [
+                      new TextRun({
+                        text: `Total Rolls: ${rolls.length}`,
+                        bold: true,
+                        font: "Times New Roman",
+                        size: 28,
+                      }),
+                    ]
+                  : [],
+            }),
+          ],
+        })
+      );
+    }
+
+    rows.push(new TableRow({ children: totalCells }));
+
+    const doc = new Document({
+      sections: [
+        {
+          children: [
+            new Paragraph({
+              spacing: { after: 400 },
+              children: [
+                new TextRun({
+                  text: `Rolls for Subject: ${subjectCode}`,
+                  bold: true,
+                  font: "Times New Roman",
+                  size: 30,
+                }),
+              ],
+            }),
+            new Table({
+              rows,
+              width: {
+                size: 100,
+                type: WidthType.PERCENTAGE,
+              },
+            }),
+          ],
+        },
+      ],
     });
 
-    const doc = new Document({ sections });
     const buffer = await Packer.toBuffer(doc);
     fs.unlinkSync(filePath);
 
