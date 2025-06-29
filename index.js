@@ -9,6 +9,11 @@ const {
   Paragraph,
   TextRun,
   PageBreak,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
 } = require("docx");
 
 const app = express();
@@ -116,15 +121,26 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
               text: `Group ${index + 1}`,
               bold: true,
               size: 28,
+              font: "Times New Roman",
             }),
           ],
         }),
         new Paragraph({
           spacing: { after: 200 },
-          children: [new TextRun(`Roll Range: ${rollRangeText}`)],
+          children: [
+            new TextRun({
+              text: `Roll Range: ${rollRangeText}`,
+              font: "Times New Roman",
+            }),
+          ],
         }),
         new Paragraph({
-          children: [new TextRun(`Absent: ${absentText}`)],
+          children: [
+            new TextRun({
+              text: `Absent: ${absentText}`,
+              font: "Times New Roman",
+            }),
+          ],
         }),
       ];
 
@@ -153,7 +169,7 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
   }
 });
 
-// === Endpoint 2: Subject-wise Roll Column Sheet ===
+// === Endpoint 2: Subject-wise Roll Column Sheet with Table and Borders ===
 app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => {
   try {
     const subjectCode = req.body.subjectCode;
@@ -180,48 +196,71 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
     const sections = pages.map((pageRolls, pageIndex) => {
       const rows = [];
 
-      const colHeight = Math.ceil(pageRolls.length / columns);
-      const columnData = [];
+      for (let rowIndex = 0; rowIndex < maxRows; rowIndex++) {
+        const cells = [];
 
-      for (let col = 0; col < columns; col++) {
-        columnData.push(
-          pageRolls.slice(col * colHeight, (col + 1) * colHeight)
-        );
-      }
+        for (let colIndex = 0; colIndex < columns; colIndex++) {
+          const rollIndex = colIndex * maxRows + rowIndex; // vertical column order
+          const rollValue = rollIndex < pageRolls.length ? pageRolls[rollIndex] : "";
 
-      for (let row = 0; row < colHeight; row++) {
-        const line = [];
-
-        for (let col = 0; col < columns; col++) {
-          const val = columnData[col][row] || "";
-          line.push(val.padEnd(8, " "));
+          cells.push(
+            new TableCell({
+              width: {
+                size: 100 / columns,
+                type: WidthType.PERCENTAGE,
+              },
+              borders: {
+                top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+                bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+                left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+                right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+              },
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({
+                      text: rollValue,
+                      font: "Times New Roman",
+                      size: 24, // 12pt font
+                    }),
+                  ],
+                  spacing: { before: 100, after: 100 },
+                }),
+              ],
+            })
+          );
         }
 
-        rows.push(
-          new Paragraph({
-            children: [new TextRun({ text: line.join("   "), font: "Courier New", size: 24 })],
-          })
-        );
+        rows.push(new TableRow({ children: cells }));
       }
 
-      if (pageIndex === pages.length - 1) {
-        rows.push(
-          new Paragraph({
-            spacing: { before: 300 },
+      // Add total row below the table
+      const totalRow = new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: columns,
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+              bottom: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+              left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+              right: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+            },
             children: [
-              new TextRun({
-                text: `Total: ${rolls.length} students`,
-                bold: true,
-                size: 28,
+              new Paragraph({
+                alignment: "center",
+                children: [
+                  new TextRun({
+                    text: `Total Rolls: ${pageRolls.length}`,
+                    bold: true,
+                    font: "Times New Roman",
+                    size: 28,
+                  }),
+                ],
               }),
             ],
-          })
-        );
-      }
-
-      if (pageIndex !== pages.length - 1) {
-        rows.push(new Paragraph({ children: [new PageBreak()] }));
-      }
+          }),
+        ],
+      });
 
       return {
         children: [
@@ -231,11 +270,22 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
               new TextRun({
                 text: `Rolls for Subject: ${subjectCode}`,
                 bold: true,
+                font: "Times New Roman",
                 size: 30,
               }),
             ],
           }),
-          ...rows,
+          new Table({
+            rows,
+            width: {
+              size: 100,
+              type: WidthType.PERCENTAGE,
+            },
+          }),
+          totalRow,
+          ...(pageIndex !== pages.length - 1
+            ? [new Paragraph({ children: [new PageBreak()] })]
+            : []),
         ],
       };
     });
@@ -244,7 +294,10 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
     const buffer = await Packer.toBuffer(doc);
     fs.unlinkSync(filePath);
 
-    res.setHeader("Content-Disposition", `attachment; filename=Subject-${subjectCode}.docx`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=Subject-${subjectCode}.docx`
+    );
     res.send(buffer);
   } catch (err) {
     console.error(err);
