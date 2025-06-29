@@ -14,6 +14,7 @@ const {
   TableCell,
   WidthType,
   BorderStyle,
+  convertInchesToTwip,
 } = require("docx");
 
 const app = express();
@@ -168,7 +169,7 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
   }
 });
 
-// === Endpoint 2: Subject-wise Roll Table (One Table, One Total) ===
+// === Endpoint 2: Subject-wise Rolls (6 columns, 48 rows, vertical fill + Total) ===
 app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => {
   try {
     const subjectCode = req.body.subjectCode;
@@ -184,18 +185,24 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
       .filter(Boolean);
 
     const columns = 6;
-    const rows = [];
-    const totalRows = Math.ceil(rolls.length / columns);
+    const rows = 48;
+    const maxCells = columns * rows;
 
-    for (let rowIndex = 0; rowIndex < totalRows; rowIndex++) {
-      const cells = [];
+    const tableRows = [];
+
+    for (let rowIndex = 0; rowIndex < rows; rowIndex++) {
+      const rowCells = [];
 
       for (let colIndex = 0; colIndex < columns; colIndex++) {
-        const index = colIndex * totalRows + rowIndex;
+        const index = colIndex * rows + rowIndex; // vertical order
         const roll = index < rolls.length ? rolls[index] : "";
 
-        cells.push(
+        rowCells.push(
           new TableCell({
+            margins: {
+              left: convertInchesToTwip(0.1),
+              right: convertInchesToTwip(0.1),
+            },
             width: {
               size: 100 / columns,
               type: WidthType.PERCENTAGE,
@@ -222,10 +229,10 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
         );
       }
 
-      rows.push(new TableRow({ children: cells }));
+      tableRows.push(new TableRow({ children: rowCells }));
     }
 
-    // Final total row with 6 separate cells
+    // Total Row
     const totalCells = [];
     for (let i = 0; i < columns; i++) {
       totalCells.push(
@@ -243,7 +250,7 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
                 i === 0
                   ? [
                       new TextRun({
-                        text: `Total Rolls: ${rolls.length}`,
+                        text: `Total: ${rolls.length}`,
                         bold: true,
                         font: "Times New Roman",
                         size: 28,
@@ -256,7 +263,7 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
       );
     }
 
-    rows.push(new TableRow({ children: totalCells }));
+    tableRows.push(new TableRow({ children: totalCells }));
 
     const doc = new Document({
       sections: [
@@ -274,7 +281,7 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
               ],
             }),
             new Table({
-              rows,
+              rows: tableRows,
               width: {
                 size: 100,
                 type: WidthType.PERCENTAGE,
