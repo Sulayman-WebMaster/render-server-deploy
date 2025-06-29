@@ -68,7 +68,6 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
         currentGroupAbsent = [];
         presentCount = 0;
       }
-
       i++;
     }
 
@@ -105,14 +104,11 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
         } else {
           rollRanges.push(`${start}---${end}=${count}`);
         }
-
         i++;
       }
 
       const rollRangeText = rollRanges.join(", ");
-      const absentText = group.absents.length
-        ? group.absents.join(", ")
-        : "0";
+      const absentText = group.absents.length ? group.absents.join(", ") : "0";
 
       const children = [
         new Paragraph({
@@ -169,7 +165,7 @@ app.post("/generate", upload.single("excel"), async (req, res) => {
   }
 });
 
-// === Endpoint 2: Subject-wise Rolls (6 columns, 48 rows, vertical fill + Total) ===
+// === Endpoint 2: Subject-wise Rolls with 6-column layout without blank rows ===
 app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => {
   try {
     const subjectCode = req.body.subjectCode;
@@ -186,119 +182,97 @@ app.post("/generate-subject-rolls", upload.single("excel"), async (req, res) => 
 
     const columns = 6;
     const rows = 48;
-    const maxCells = columns * rows;
+    const rollsPerPage = columns * rows;
+    const pages = [];
 
-    const tableRows = [];
+    for (let i = 0; i < rolls.length; i += rollsPerPage) {
+      pages.push(rolls.slice(i, i + rollsPerPage));
+    }
 
-    for (let rowIndex = 0; rowIndex < rows; rowIndex++) {
-      const rowCells = [];
+    const sections = pages.map((pageRolls, pageIndex) => {
+      const columnTables = [];
+      const tableData = Array.from({ length: rows }, () => Array(columns).fill(""));
 
-      for (let colIndex = 0; colIndex < columns; colIndex++) {
-        const index = colIndex * rows + rowIndex; // vertical order
-        const roll = index < rolls.length ? rolls[index] : "";
+      pageRolls.forEach((roll, index) => {
+        const col = Math.floor(index / rows);
+        const row = index % rows;
+        tableData[row][col] = roll;
+      });
 
-        rowCells.push(
-          new TableCell({
-            margins: {
-              left: convertInchesToTwip(0.1),
-              right: convertInchesToTwip(0.1),
-            },
-            width: {
-              size: 100 / columns,
-              type: WidthType.PERCENTAGE,
-            },
-            borders: {
-              top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-              bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-              left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-              right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-            },
-            children: [
-              new Paragraph({
+      for (let col = 0; col < columns; col++) {
+        const colRows = [];
+        for (let r = 0; r < rows; r++) {
+          let roll = tableData[r][col];
+
+          // Insert total in last cell if it's the final slot of final page
+          if (
+            pageIndex === pages.length - 1 &&
+            r === rows - 1 &&
+            col === columns - 1
+          ) {
+            roll = `Total: ${rolls.length}`;
+          }
+
+          if (roll !== "") {
+            colRows.push(
+              new TableRow({
                 children: [
-                  new TextRun({
-                    text: roll,
-                    font: "Times New Roman",
-                    size: 24,
+                  new TableCell({
+                    children: [
+                      new Paragraph({
+                        children: [new TextRun({ text: roll, font: "Times New Roman", size: 24, bold: roll.startsWith("Total") })],
+                        spacing: { before: 100, after: 100 },
+                      }),
+                    ],
+                    borders: {
+                      top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+                      bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+                      left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+                      right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+                    },
+                    width: { size: 100, type: WidthType.PERCENTAGE },
                   }),
                 ],
-                spacing: { before: 100, after: 100 },
-              }),
-            ],
-          })
-        );
+              })
+            );
+          }
+        }
+
+        if (colRows.length > 0) {
+          columnTables.push(
+            new Table({
+              rows: colRows,
+              width: { size: 100, type: WidthType.PERCENTAGE },
+            })
+          );
+        }
       }
 
-      tableRows.push(new TableRow({ children: rowCells }));
-    }
-
-    // Total Row
-    const totalCells = [];
-    for (let i = 0; i < columns; i++) {
-      totalCells.push(
-        new TableCell({
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            bottom: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            left: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
-            right: { style: BorderStyle.SINGLE, size: 2, color: "000000" },
+      return {
+        properties: {
+          margin: {
+            top: convertInchesToTwip(0.3),
+            bottom: convertInchesToTwip(0.3),
+            left: convertInchesToTwip(0.3),
+            right: convertInchesToTwip(0.3),
           },
-          children: [
-            new Paragraph({
-              alignment: i === 0 ? "center" : undefined,
-              children:
-                i === 0
-                  ? [
-                      new TextRun({
-                        text: `Total: ${rolls.length}`,
-                        bold: true,
-                        font: "Times New Roman",
-                        size: 28,
-                      }),
-                    ]
-                  : [],
-            }),
-          ],
-        })
-      );
-    }
-
-    tableRows.push(new TableRow({ children: totalCells }));
+          column: { space: 720, count: 6 },
+        },
+        children: [
+          ...columnTables,
+          ...(pageIndex < pages.length - 1 ? [new Paragraph({ children: [new PageBreak()] })] : []),
+        ],
+      };
+    });
 
     const doc = new Document({
-      sections: [
-        {
-          children: [
-            new Paragraph({
-              spacing: { after: 400 },
-              children: [
-                new TextRun({
-                  text: `Rolls for Subject: ${subjectCode}`,
-                  bold: true,
-                  font: "Times New Roman",
-                  size: 30,
-                }),
-              ],
-            }),
-            new Table({
-              rows: tableRows,
-              width: {
-                size: 100,
-                type: WidthType.PERCENTAGE,
-              },
-            }),
-          ],
-        },
-      ],
+      sections,
     });
 
     const buffer = await Packer.toBuffer(doc);
     fs.unlinkSync(filePath);
 
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=Subject-${subjectCode}.docx`
-    );
+    res.setHeader("Content-Disposition", `attachment; filename=Subject-${subjectCode}.docx`);
     res.send(buffer);
   } catch (err) {
     console.error(err);
